@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Illumi AR</title>
+
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+    :root { --vh: 100vh; }
+    @supports (height: 100dvh) { :root { --vh: 100dvh; } }
+
+    html, body { width: 100%; height: 100%; }
+
+    a-scene {
+      position: fixed !important;
+      left: 0; top: 0;
+      width: 100vw !important;
+      height: var(--vh) !important;
+      z-index: 1;
+    }
+    .a-canvas, canvas.a-canvas {
+      width: 100vw !important;
+      height: var(--vh) !important;
+      display: block !important;
+    }
+
+    /* 演出Canvas（カメラの上） */
+    #fxCanvas{
+      position: fixed;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      display: none;
+    }
+
+    /* 上下の薄いフェード（雰囲気） */
+    #vignette{
+      position: fixed;
+      inset: 0;
+      z-index: 4;
+      pointer-events: none;
+      display:none;
+      background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.35) 100%);
+      mix-blend-mode: multiply;
+    }
+
+    /* UI */
+    #ui {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.65);
+      z-index: 10;
+    }
+    #panel {
+      width: min(560px, 90vw);
+      color: #fff;
+      background: rgba(20,20,24,0.78);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 16px;
+      padding: 16px 16px 12px;
+    }
+    #panel h1 { font-size: 18px; margin: 0 0 8px; font-weight: 900; }
+    #panel p { font-size: 14px; margin: 6px 0; line-height: 1.45; color: rgba(255,255,255,0.9); }
+
+    #startBtn {
+      margin-top: 10px;
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 0;
+      background: rgba(255,255,255,0.92);
+      color: #111;
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    #hint {
+      position: fixed; left: 0; right: 0;
+      bottom: env(safe-area-inset-bottom);
+      padding: 10px 12px;
+      text-align: center;
+      font-size: 13px;
+      color: rgba(255,255,255,0.9);
+      text-shadow: 0 2px 10px rgba(0,0,0,0.75);
+      pointer-events: none;
+      z-index: 11;
+      display: none;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="ui">
+    <div id="panel">
+      <h1>AR</h1>
+      <p>1) START を押す</p>
+      <p>2) カメラを許可</p>
+      <p>3) このカード（マーカー）を映す</p>
+      <button id="startBtn">START</button>
+    </div>
+  </div>
+
+  <div id="hint">STARTを押してください</div>
+  <canvas id="fxCanvas"></canvas>
+  <div id="vignette"></div>
+
+  <!-- ★ 重要：autoStart:false で、START前に勝手に追跡開始しない -->
+  <a-scene
+    id="scene"
+    mindar-image="imageTargetSrc: ./targets.mind; autoStart: false; maxTrack: 1; warmupTolerance: 0; missTolerance: 30; filterMinCF: 0.00001; filterBeta: 0.0001;"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false"
+    renderer="colorManagement: true"
+  >
+    <a-camera position="0 0 0" look-controls="enabled:false"></a-camera>
+
+    <!-- targets.mind が「1枚だけ」なら targetIndex は 0 -->
+    <a-entity id="target0" mindar-image-target="targetIndex: 0"></a-entity>
+  </a-scene>
+
+  <script>
+    // =====================
+    // 設定（ここだけ好みで）
+    // =====================
+    const EFFECT_MODE = "illumi"; // "illumi" or "snow"
+    const STABLE_MS = 1000;       // 確定までの遅延（おすすめ 800〜1400）
+
+    // iPhoneの高さ対策
+    function setVh() { document.documentElement.style.setProperty("--vh", window.innerHeight + "px"); }
+    setVh();
+    window.addEventListener("resize", setVh, { passive: true });
+    window.addEventListener("orientationchange", setVh, { passive: true });
+
+    const ui = document.getElementById("ui");
+    const hint = document.getElementById("hint");
+    const sceneEl = document.getElementById("scene");
+    const target0 = document.getElementById("target0");
+    const fxCanvas = document.getElementById("fxCanvas");
+    const vignette = document.getElementById("vignette");
+    const ctx = fxCanvas.getContext("2d");
+
+    function logMsg(msg){
+      hint.style.display = "block";
+      hint.textContent = msg;
+    }
+    window.addEventListener("error", (e)=>logMsg("エラー: " + (e.message || "不明")));
+    window.addEventListener("unhandledrejection", (e)=>{
+      const m = (e.reason && e.reason.message) ? e.reason.message : String(e.reason);
+      logMsg("起動失敗: " + m);
+    });
+
+    // 状態
+    let started = false;     // start()完了後 true
+    let locked = false;      // 一度成功したらリロードまで固定
+    let visible = false;
+    let stableTimer = null;
+
+    // =====================
+    // FX描画（Canvas）
+    // =====================
+    let rafId = null;
+    let fxRunning = false;
+    let particles = [];
+    let lastT = 0;
+
+    function resizeFx(){
+      const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+      fxCanvas.width  = Math.floor(window.innerWidth * dpr);
+      fxCanvas.height = Math.floor(window.innerHeight * dpr);
+      fxCanvas.style.width = window.innerWidth + "px";
+      fxCanvas.style.height = window.innerHeight + "px";
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    }
+
+    function initFx(){
+      particles = [];
+      const w = window.innerWidth, h = window.innerHeight;
+
+      if (EFFECT_MODE === "snow"){
+        // 雪（3層）
+        const layers = [
+          {count:120, r:1.2, vy:45,  a:0.28, drift:12},
+          {count:200, r:1.7, vy:80,  a:0.45, drift:18},
+          {count:280, r:2.3, vy:120, a:0.70, drift:26},
+        ];
+        for (const L of layers){
+          for (let i=0;i<L.count;i++){
+            particles.push({
+              kind:"snow",
+              layer:L,
+              x:Math.random()*w,
+              y:Math.random()*h,
+              vx:(Math.random()-0.5)*L.drift,
+              vy:L.vy*(0.6+Math.random()*0.9),
+              r:L.r*(0.7+Math.random()*0.9)
+            });
+          }
+        }
+      } else {
+        // イルミ（玉ボケ風）
+        // 近景/中景/遠景っぽく3タイプ（サイズと速度が違う）
+        const groups = [
+          {count:36,  r:[14,26], vy:[18,28],  a:[0.10,0.18]},
+          {count:48,  r:[8,16],  vy:[28,45],  a:[0.12,0.22]},
+          {count:64,  r:[3,8],   vy:[45,70],  a:[0.10,0.20]},
+        ];
+        for (const G of groups){
+          for (let i=0;i<G.count;i++){
+            const r = rand(G.r[0], G.r[1]);
+            particles.push({
+              kind:"illumi",
+              x:Math.random()*w,
+              y:Math.random()*h,
+              vy:rand(G.vy[0], G.vy[1]),
+              r,
+              a:rand(G.a[0], G.a[1]),
+              phase:Math.random()*Math.PI*2,
+              wobble:rand(8,18) // 横揺れ
+            });
+          }
+        }
+      }
+    }
+
+    function rand(a,b){ return a + Math.random()*(b-a); }
+
+    function fxStart(){
+      if (fxRunning) return;
+      fxRunning = true;
+      fxCanvas.style.display = "block";
+      vignette.style.display = "block";
+      resizeFx();
+      initFx();
+      lastT = performance.now();
+      rafId = requestAnimationFrame(tickFx);
+    }
+
+    function fxStop(){
+      fxRunning = false;
+      fxCanvas.style.display = "none";
+      vignette.style.display = "none";
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
+      ctx.clearRect(0,0,window.innerWidth,window.innerHeight);
+    }
+
+    function tickFx(t){
+      if (!fxRunning) return;
+      const dt = Math.min(0.05, (t-lastT)/1000);
+      lastT = t;
+
+      const w = window.innerWidth, h = window.innerHeight;
+      ctx.clearRect(0,0,w,h);
+
+      if (EFFECT_MODE === "snow"){
+        for (const p of particles){
+          const L = p.layer;
+          p.x += p.vx*dt;
+          p.y += p.vy*dt;
+          p.vx += (Math.random()-0.5)*6*dt;
+          p.vx = Math.max(-L.drift, Math.min(L.drift, p.vx));
+
+          if (p.y > h + 12){ p.y = -12; p.x = Math.random()*w; p.vx = (Math.random()-0.5)*L.drift; }
+          if (p.x < -20) p.x = w + 20;
+          if (p.x > w + 20) p.x = -20;
+
+          ctx.fillStyle = `rgba(255,255,255,${L.a})`;
+          ctx.beginPath();
+          ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+          ctx.fill();
+        }
+      } else {
+        // イルミ：柔らかい発光（影響範囲を広げるためにグラデ）
+        for (const p of particles){
+          p.y += p.vy*dt;
+          p.phase += dt*0.9;
+          p.x += Math.sin(p.phase)*p.wobble*dt;
+
+          if (p.y > h + 40){ p.y = -40; p.x = Math.random()*w; }
+          if (p.x < -60) p.x = w + 60;
+          if (p.x > w + 60) p.x = -60;
+
+          const g = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r);
+          // “白〜薄い色味”にしたい場合はここを少し変える（今は白系）
+          g.addColorStop(0, `rgba(255,255,255,${p.a})`);
+          g.addColorStop(1, `rgba(255,255,255,0)`);
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+          ctx.fill();
+        }
+      }
+
+      rafId = requestAnimationFrame(tickFx);
+    }
+
+    window.addEventListener("resize", ()=>{
+      if (!fxRunning) return;
+      resizeFx();
+      initFx();
+    }, {passive:true});
+
+    // =====================
+    // START（起動）
+    // =====================
+    document.getElementById("startBtn").addEventListener("click", async ()=>{
+      ui.style.display = "none";
+      logMsg("初期化中…");
+
+      try{
+        if (!sceneEl.hasLoaded){
+          await new Promise(res => sceneEl.addEventListener("loaded", res, {once:true}));
+        }
+        const mindarSystem = sceneEl.systems["mindar-image-system"];
+        if (!mindarSystem) throw new Error("mindar-image-system が見つかりません");
+
+        await mindarSystem.start();
+        started = true;
+
+        // iPhoneでキャンバスが半分になる対策
+        window.dispatchEvent(new Event("resize"));
+
+        logMsg("カードを映してください");
+      }catch(err){
+        logMsg("起動失敗: " + (err?.message || String(err)));
+      }
+    });
+
+    // =====================
+    // 判定（安定判定→確定→固定）
+    // =====================
+    function clearStable(){
+      if (stableTimer){ clearTimeout(stableTimer); stableTimer=null; }
+    }
+
+    function scheduleLock(){
+      if (!started || locked) return;
+      if (stableTimer) return;
+      stableTimer = setTimeout(()=>{
+        stableTimer = null;
+        if (!started || locked) return;
+        if (visible){
+          locked = true;     // ★ここで固定
+          fxStart();
+          logMsg("OK（リロードするまで固定表示）");
+          // 追跡を止めたい場合（環境によりpauseが無いことがあるのでtry）
+          try{
+            const mindarSystem = sceneEl.systems["mindar-image-system"];
+            if (mindarSystem && typeof mindarSystem.pause === "function") mindarSystem.pause();
+          }catch(_){}
+        }
+      }, STABLE_MS);
+    }
+
+    target0.addEventListener("targetFound", ()=>{
+      if (!started || locked) return;
+      visible = true;
+      scheduleLock();
+    });
+
+    target0.addEventListener("targetLost", ()=>{
+      if (!started || locked) return;
+      visible = false;
+      clearStable();
+      fxStop();
+      logMsg("カードを映してください");
+    });
+
+    logMsg("STARTを押してください");
+  </script>
+</body>
+</html>
