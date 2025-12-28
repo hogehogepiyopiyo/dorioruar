@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Illumi AR (Landscape)</title>
+  <title>Romantic AR</title>
 
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
@@ -14,28 +14,49 @@
     @supports (height: 100dvh) { :root { --vh: 100dvh; } }
     html, body { width: 100%; height: 100%; }
 
-    a-scene {
-      position: fixed !important;
+    /* 画面全体を包む（ここを回転させる） */
+    #stage{
+      position: fixed;
       left: 0; top: 0;
-      width: 100vw !important;
-      height: var(--vh) !important;
+      width: 100vw;
+      height: var(--vh);
+      transform-origin: center center;
+      background: #000;
+    }
+
+    /* 縦のときだけ「見た目を横向き化」 */
+    body.force-landscape-visual #stage{
+      width: var(--vh);     /* 縦の高さを横の幅に */
+      height: 100vw;        /* 縦の幅を横の高さに */
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%) rotate(90deg);
+    }
+
+    /* stage内のレイヤ（全部 absolute にして回転に追従させる） */
+    a-scene{
+      position: absolute !important;
+      inset: 0;
+      width: 100% !important;
+      height: 100% !important;
       z-index: 1;
     }
-    .a-canvas, canvas.a-canvas {
-      width: 100vw !important;
-      height: var(--vh) !important;
+    .a-canvas, canvas.a-canvas{
+      width: 100% !important;
+      height: 100% !important;
       display: block !important;
     }
 
+    /* 演出Canvas（カメラの上） */
     #fxCanvas{
-      position: fixed;
+      position: absolute;
       inset: 0;
       z-index: 3;
       pointer-events: none;
       display: none;
     }
     #vignette{
-      position: fixed;
+      position: absolute;
       inset: 0;
       z-index: 4;
       pointer-events: none;
@@ -45,13 +66,16 @@
     }
 
     /* START画面 */
-    #ui {
-      position: fixed; inset: 0;
-      display: flex; align-items: center; justify-content: center;
+    #ui{
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       background: rgba(0,0,0,0.65);
       z-index: 10;
     }
-    #panel {
+    #panel{
       width: min(560px, 90vw);
       color: #fff;
       background: rgba(20,20,24,0.78);
@@ -59,10 +83,10 @@
       border-radius: 16px;
       padding: 16px 16px 12px;
     }
-    #panel h1 { font-size: 18px; margin: 0 0 8px; font-weight: 900; }
-    #panel p { font-size: 14px; margin: 6px 0; line-height: 1.45; color: rgba(255,255,255,0.9); }
+    #panel h1{ font-size: 18px; margin: 0 0 8px; font-weight: 900; }
+    #panel p{ font-size: 14px; margin: 6px 0; line-height: 1.45; color: rgba(255,255,255,0.9); }
 
-    #startBtn {
+    #startBtn{
       margin-top: 10px;
       width: 100%;
       padding: 12px 14px;
@@ -73,13 +97,11 @@
       font-size: 16px;
       font-weight: 900;
     }
-    #startBtn:disabled{
-      opacity: 0.45;
-    }
 
-    #hint {
-      position: fixed; left: 0; right: 0;
-      bottom: env(safe-area-inset-bottom);
+    #hint{
+      position: absolute;
+      left: 0; right: 0;
+      bottom: 10px;
       padding: 10px 12px;
       text-align: center;
       font-size: 13px;
@@ -90,96 +112,118 @@
       display: none;
       white-space: pre-line;
     }
-
-    /* 縦向きのときに出す「回転して」オーバーレイ */
-    #rotateOverlay{
-      position: fixed;
-      inset: 0;
-      z-index: 100;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0,0,0,0.82);
-      color: rgba(255,255,255,0.95);
-      text-align: center;
-      padding: 18px;
-    }
-    #rotateOverlay .box{
-      width: min(520px, 92vw);
-      background: rgba(20,20,24,0.78);
-      border: 1px solid rgba(255,255,255,0.18);
-      border-radius: 16px;
-      padding: 16px;
-    }
-    #rotateOverlay .title{
-      font-weight: 900;
-      font-size: 18px;
-      margin-bottom: 8px;
-    }
-    #rotateOverlay .msg{
-      font-size: 14px;
-      line-height: 1.5;
-      color: rgba(255,255,255,0.9);
-    }
   </style>
 </head>
 
 <body>
-  <!-- 縦向きブロック -->
-  <div id="rotateOverlay">
-    <div class="box">
-      <div class="title">スマホを横向きにしてください</div>
-      <div class="msg">このページは横向き（ランドスケープ）で動作します。<br>スマホを横向きにしてください。</div>
+  <div id="stage">
+    <div id="ui">
+      <div id="panel">
+        <h1>AR</h1>
+        <p>1) START → カメラ許可</p>
+        <p>2) カード（マーカー）を映す</p>
+        <p style="opacity:.85">縦持ちでも、表示は自動で横向きになります</p>
+        <button id="startBtn">START</button>
+      </div>
     </div>
+
+    <div id="hint">STARTを押してください</div>
+    <canvas id="fxCanvas"></canvas>
+    <div id="vignette"></div>
+
+    <!-- START前に追跡開始しない -->
+    <a-scene
+      id="scene"
+      mindar-image="imageTargetSrc: ./targets.mind; autoStart: false; maxTrack: 1; warmupTolerance: 0; missTolerance: 30; filterMinCF: 0.00001; filterBeta: 0.0001;"
+      vr-mode-ui="enabled: false"
+      device-orientation-permission-ui="enabled: false"
+      renderer="colorManagement: true"
+    >
+      <a-camera position="0 0 0" look-controls="enabled:false"></a-camera>
+      <!-- targets.mind が1枚だけなら targetIndex:0 -->
+      <a-entity id="target0" mindar-image-target="targetIndex: 0"></a-entity>
+    </a-scene>
   </div>
-
-  <div id="ui">
-    <div id="panel">
-      <h1>AR</h1>
-      <p>1) スマホを横向きにする</p>
-      <p>2) START → カメラ許可</p>
-      <p>3) カード（マーカー）を映す</p>
-      <button id="startBtn">START</button>
-    </div>
-  </div>
-
-  <div id="hint">STARTを押してください</div>
-  <canvas id="fxCanvas"></canvas>
-  <div id="vignette"></div>
-
-  <!-- autoStart:false でSTART前に追跡開始しない -->
-  <a-scene
-    id="scene"
-    mindar-image="imageTargetSrc: ./targets.mind; autoStart: false; maxTrack: 1; warmupTolerance: 0; missTolerance: 30; filterMinCF: 0.00001; filterBeta: 0.0001;"
-    vr-mode-ui="enabled: false"
-    device-orientation-permission-ui="enabled: false"
-    renderer="colorManagement: true"
-  >
-    <a-camera position="0 0 0" look-controls="enabled:false"></a-camera>
-    <a-entity id="target0" mindar-image-target="targetIndex: 0"></a-entity>
-  </a-scene>
 
   <script>
     // =====================
-    // 設定
+    // 設定（ここだけ好みで調整）
     // =====================
-    const EFFECT_MODE = "illumi"; // "illumi" or "snow"
-    const STABLE_MS = 1000;       // 確定までの遅延（横向き前提でも 900〜1400 推奨）
-    const REQUIRE_LANDSCAPE = true;
+    const STABLE_MS = 1100; // 確定までの遅延（誤確定があるなら 1200〜1400）
 
-    // iPhoneの高さ対策
-    function setVh() { document.documentElement.style.setProperty("--vh", window.innerHeight + "px"); }
-    setVh();
-    window.addEventListener("resize", setVh, { passive: true });
-    window.addEventListener("orientationchange", setVh, { passive: true });
+    // ロマンチック（暖色）パレット
+    const ILLUMI_PALETTE = [
+      [255, 244, 214], // warm white
+      [255, 214, 140], // amber
+      [255, 190, 110], // gold
+      [255, 210, 235], // blush pink
+      [210, 230, 255], // cool white（少量）
+    ];
 
+    // パーティクル量（重ければ count を少し下げる）
+    const FX = {
+      // イルミ（ボケ）：near/mid/far
+      illumiNear:  { count: 24, r:[18,32], vy:[10,18], a:[0.10,0.18] },
+      illumiMid:   { count: 40, r:[10,18], vy:[16,28], a:[0.10,0.22] },
+      illumiFar:   { count: 66, r:[4,10],  vy:[26,44], a:[0.08,0.18] },
+
+      // 雪：near/mid/far（近いほど大きめ＆遅め）
+      snowNear: { count: 120, r:[1.8,3.2],  vy:[55,95],   a:[0.10,0.22], drift:18 },
+      snowMid:  { count: 200, r:[1.2,2.2],  vy:[85,130],  a:[0.08,0.18], drift:24 },
+      snowFar:  { count: 280, r:[0.8,1.6],  vy:[115,170], a:[0.06,0.14], drift:30 },
+    };
+
+    // 雪のグロー（層別：近景強め／遠景弱め）
+    const SNOW_GLOW = {
+      near: { Rmul: 4.2, glowMul: 0.70, coreMul: 0.95 },
+      mid:  { Rmul: 3.2, glowMul: 0.50, coreMul: 0.85 },
+      far:  { Rmul: 2.4, glowMul: 0.32, coreMul: 0.78 },
+    };
+
+    // =====================
+    // 縦のときだけ見た目を横向きにする
+    // =====================
+    let applying = false;
+    function setVh(){
+      document.documentElement.style.setProperty("--vh", window.innerHeight + "px");
+    }
+    function isPortrait(){
+      return window.innerHeight > window.innerWidth;
+    }
+    function applyVisualLandscape(){
+      if (applying) return;
+      applying = true;
+
+      setVh();
+      if (isPortrait()){
+        document.body.classList.add("force-landscape-visual");
+      } else {
+        document.body.classList.remove("force-landscape-visual");
+      }
+
+      // FXやA-Frameの描画領域を更新
+      if (fxRunning){
+        resizeFx();
+        initFx();
+      } else {
+        // まだ開始してなくてもCanvasサイズだけ合わせる
+        resizeFx();
+      }
+
+      applying = false;
+    }
+    window.addEventListener("resize", applyVisualLandscape, { passive: true });
+    window.addEventListener("orientationchange", applyVisualLandscape, { passive: true });
+
+    // =====================
+    // UI/エラー表示
+    // =====================
     const ui = document.getElementById("ui");
     const hint = document.getElementById("hint");
     const sceneEl = document.getElementById("scene");
     const target0 = document.getElementById("target0");
     const fxCanvas = document.getElementById("fxCanvas");
     const vignette = document.getElementById("vignette");
-    const rotateOverlay = document.getElementById("rotateOverlay");
     const startBtn = document.getElementById("startBtn");
     const ctx = fxCanvas.getContext("2d");
 
@@ -187,66 +231,50 @@
       hint.style.display = "block";
       hint.textContent = msg;
     }
-
     window.addEventListener("error", (e)=>logMsg("エラー: " + (e.message || "不明")));
     window.addEventListener("unhandledrejection", (e)=>{
       const m = (e.reason && e.reason.message) ? e.reason.message : String(e.reason);
       logMsg("起動失敗: " + m);
     });
 
-    function isLandscape(){
-      // iOS Safariでも安定しやすい判定：幅>高さ
-      return window.innerWidth > window.innerHeight;
-    }
-
-    // 状態
-    let started = false;   // start()完了後 true
-    let locked = false;    // 一度成功したらリロードまで固定
-    let visible = false;
-    let stableTimer = null;
-
-    // MindAR system 参照（start後に入る）
     function getMindarSystem(){
       return sceneEl.systems && sceneEl.systems["mindar-image-system"];
     }
 
     // =====================
-    // 画面向きガード（縦向きなら開始不可＆起動中なら停止）
+    // 状態（認識→確定→固定）
     // =====================
-    function enforceOrientation(){
-      if (!REQUIRE_LANDSCAPE) return;
+    let started = false;
+    let locked = false;
+    let visible = false;
+    let stableTimer = null;
 
-      if (!isLandscape()){
-        rotateOverlay.style.display = "flex";
-        startBtn.disabled = true;
-
-        // 起動中に縦向きになったら停止して「横向きに」へ
-        if (started && !locked){
-          try {
-            const sys = getMindarSystem();
-            if (sys && typeof sys.stop === "function") sys.stop(); // カメラ停止含む（確実に止まる）
-          } catch(_){}
-          started = false;
-          visible = false;
-          clearStable();
-          fxStop();
-          logMsg("スマホを横向きにしてください");
-          ui.style.display = "flex";
-        } else {
-          logMsg("スマホを横向きにしてください");
-        }
-      } else {
-        rotateOverlay.style.display = "none";
-        startBtn.disabled = false;
-        if (!started && !locked) logMsg("STARTを押してください");
-      }
+    function clearStable(){
+      if (stableTimer){ clearTimeout(stableTimer); stableTimer=null; }
     }
 
-    window.addEventListener("resize", enforceOrientation, { passive: true });
-    window.addEventListener("orientationchange", enforceOrientation, { passive: true });
+    function scheduleLock(){
+      if (!started || locked) return;
+      if (stableTimer) return;
+      stableTimer = setTimeout(()=>{
+        stableTimer = null;
+        if (!started || locked) return;
+        if (visible){
+          locked = true;
+          fxStart();
+          logMsg("OK（リロードするまで固定表示）");
+
+          // 追跡を止めたい場合（pauseがある環境のみ）
+          try{
+            const sys = getMindarSystem();
+            if (sys && typeof sys.pause === "function") sys.pause();
+          }catch(_){}
+        }
+      }, STABLE_MS);
+    }
 
     // =====================
-    // FX描画（Canvas）
+    // FX（Warm Bokeh + Snow + Twinkle）
     // =====================
     let rafId = null;
     let fxRunning = false;
@@ -261,54 +289,56 @@
       fxCanvas.style.height = window.innerHeight + "px";
       ctx.setTransform(dpr,0,0,dpr,0,0);
     }
-
     function rand(a,b){ return a + Math.random()*(b-a); }
 
     function initFx(){
       particles = [];
       const w = window.innerWidth, h = window.innerHeight;
 
-      if (EFFECT_MODE === "snow"){
-        const layers = [
-          {count:120, r:1.2, vy:45,  a:0.28, drift:12},
-          {count:200, r:1.7, vy:80,  a:0.45, drift:18},
-          {count:280, r:2.3, vy:120, a:0.70, drift:26},
-        ];
-        for (const L of layers){
-          for (let i=0;i<L.count;i++){
-            particles.push({
-              kind:"snow",
-              layer:L,
-              x:Math.random()*w,
-              y:Math.random()*h,
-              vx:(Math.random()-0.5)*L.drift,
-              vy:L.vy*(0.6+Math.random()*0.9),
-              r:L.r*(0.7+Math.random()*0.9)
-            });
-          }
-        }
-      } else {
-        const groups = [
-          {count:36,  r:[14,26], vy:[18,28],  a:[0.10,0.18]},
-          {count:48,  r:[8,16],  vy:[28,45],  a:[0.12,0.22]},
-          {count:64,  r:[3,8],   vy:[45,70],  a:[0.10,0.20]},
-        ];
-        for (const G of groups){
-          for (let i=0;i<G.count;i++){
-            const r = rand(G.r[0], G.r[1]);
-            particles.push({
-              kind:"illumi",
-              x:Math.random()*w,
-              y:Math.random()*h,
-              vy:rand(G.vy[0], G.vy[1]),
-              r,
-              a:rand(G.a[0], G.a[1]),
-              phase:Math.random()*Math.PI*2,
-              wobble:rand(8,18)
-            });
-          }
-        }
+      function pickCol(){
+        return ILLUMI_PALETTE[Math.floor(Math.random()*ILLUMI_PALETTE.length)];
       }
+
+      function mkIllumi(G){
+        const col = pickCol();
+        particles.push({
+          kind: "illumi",
+          x: Math.random()*w,
+          y: Math.random()*h,
+          vy: rand(G.vy[0], G.vy[1]),
+          r:  rand(G.r[0],  G.r[1]),
+          a:  rand(G.a[0],  G.a[1]),
+          col,
+          phase: Math.random()*Math.PI*2,
+          tw: rand(0.7, 1.6),       // twinkle速度
+          twAmp: rand(0.18, 0.38),  // twinkle強さ
+          wobble: rand(6, 16)       // 横揺れ
+        });
+      }
+
+      function mkSnow(G, layerName){
+        particles.push({
+          kind: "snow",
+          layer: layerName, // near / mid / far
+          x: Math.random()*w,
+          y: Math.random()*h,
+          vx: (Math.random()-0.5)*G.drift,
+          vy: rand(G.vy[0], G.vy[1]),
+          r:  rand(G.r[0],  G.r[1]),
+          a:  rand(G.a[0],  G.a[1]),
+          drift: G.drift
+        });
+      }
+
+      // イルミ（暖色ボケ）
+      for (let i=0;i<FX.illumiNear.count;i++) mkIllumi(FX.illumiNear);
+      for (let i=0;i<FX.illumiMid.count;i++)  mkIllumi(FX.illumiMid);
+      for (let i=0;i<FX.illumiFar.count;i++)  mkIllumi(FX.illumiFar);
+
+      // 雪（層別）
+      for (let i=0;i<FX.snowNear.count;i++) mkSnow(FX.snowNear, "near");
+      for (let i=0;i<FX.snowMid.count;i++)  mkSnow(FX.snowMid,  "mid");
+      for (let i=0;i<FX.snowFar.count;i++)  mkSnow(FX.snowFar,  "far");
     }
 
     function fxStart(){
@@ -339,74 +369,88 @@
       const w = window.innerWidth, h = window.innerHeight;
       ctx.clearRect(0,0,w,h);
 
-      if (EFFECT_MODE === "snow"){
-        for (const p of particles){
-          const L = p.layer;
-          p.x += p.vx*dt;
-          p.y += p.vy*dt;
-          p.vx += (Math.random()-0.5)*6*dt;
-          p.vx = Math.max(-L.drift, Math.min(L.drift, p.vx));
-          if (p.y > h + 12){ p.y = -12; p.x = Math.random()*w; p.vx = (Math.random()-0.5)*L.drift; }
-          if (p.x < -20) p.x = w + 20;
-          if (p.x > w + 20) p.x = -20;
-          ctx.fillStyle = `rgba(255,255,255,${L.a})`;
-          ctx.beginPath();
-          ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
-          ctx.fill();
-        }
-      } else {
-        for (const p of particles){
-          p.y += p.vy*dt;
-          p.phase += dt*0.9;
-          p.x += Math.sin(p.phase)*p.wobble*dt;
+      // ---- イルミ（暖色ボケ + twinkle）----
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
 
-          if (p.y > h + 40){ p.y = -40; p.x = Math.random()*w; }
-          if (p.x < -60) p.x = w + 60;
-          if (p.x > w + 60) p.x = -60;
+      for (const p of particles){
+        if (p.kind !== "illumi") continue;
 
-          const g = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r);
-          g.addColorStop(0, `rgba(255,255,255,${p.a})`);
-          g.addColorStop(1, `rgba(255,255,255,0)`);
-          ctx.fillStyle = g;
-          ctx.beginPath();
-          ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
-          ctx.fill();
-        }
+        p.y += p.vy*dt;
+        p.phase += dt*p.tw;
+        p.x += Math.sin(p.phase)*p.wobble*dt;
+
+        if (p.y > h + 80){ p.y = -80; p.x = Math.random()*w; }
+        if (p.x < -120) p.x = w + 120;
+        if (p.x > w + 120) p.x = -120;
+
+        const tw = 1 + Math.sin(p.phase*1.25)*p.twAmp;
+        const a = Math.max(0, Math.min(1, p.a*tw));
+        const [r,g,b] = p.col;
+
+        // 外側グロー
+        const R1 = p.r * 2.4;
+        const g1 = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,R1);
+        g1.addColorStop(0, `rgba(${r},${g},${b},${a*0.24})`);
+        g1.addColorStop(1, `rgba(${r},${g},${b},0)`);
+        ctx.fillStyle = g1;
+        ctx.beginPath(); ctx.arc(p.x,p.y,R1,0,Math.PI*2); ctx.fill();
+
+        // コア
+        const R2 = p.r;
+        const g2 = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,R2);
+        g2.addColorStop(0, `rgba(${r},${g},${b},${a*0.90})`);
+        g2.addColorStop(1, `rgba(${r},${g},${b},0)`);
+        ctx.fillStyle = g2;
+        ctx.beginPath(); ctx.arc(p.x,p.y,R2,0,Math.PI*2); ctx.fill();
       }
+
+      ctx.restore();
+
+      // ---- 雪（層別グロー：近景強め／遠景弱め）----
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+
+      for (const p of particles){
+        if (p.kind !== "snow") continue;
+
+        p.x += p.vx*dt;
+        p.y += p.vy*dt;
+
+        // 風で少し揺らす
+        p.vx += (Math.random()-0.5)*10*dt;
+        p.vx = Math.max(-p.drift, Math.min(p.drift, p.vx));
+
+        if (p.y > h + 14){ p.y = -14; p.x = Math.random()*w; p.vx = (Math.random()-0.5)*p.drift; }
+        if (p.x < -20) p.x = w + 20;
+        if (p.x > w + 20) p.x = -20;
+
+        const L = SNOW_GLOW[p.layer || "mid"];
+
+        // 外側グロー（層別）
+        const Rg = p.r * L.Rmul;
+        const ag = Math.min(1, p.a * L.glowMul);
+
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, Rg);
+        g.addColorStop(0, `rgba(255,255,255,${ag})`);
+        g.addColorStop(1, `rgba(255,255,255,0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(p.x, p.y, Rg, 0, Math.PI * 2); ctx.fill();
+
+        // コア（層別）
+        const ac = Math.min(1, p.a * L.coreMul);
+        ctx.fillStyle = `rgba(255,255,255,${ac})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      }
+
+      ctx.restore();
+
       rafId = requestAnimationFrame(tickFx);
     }
 
-    window.addEventListener("resize", ()=>{
-      if (!fxRunning) return;
-      resizeFx();
-      initFx();
-    }, {passive:true});
-
     // =====================
-    // 安定判定→確定→固定
+    // 認識イベント
     // =====================
-    function clearStable(){
-      if (stableTimer){ clearTimeout(stableTimer); stableTimer=null; }
-    }
-
-    function scheduleLock(){
-      if (!started || locked) return;
-      if (stableTimer) return;
-      stableTimer = setTimeout(()=>{
-        stableTimer = null;
-        if (!started || locked) return;
-        if (visible){
-          locked = true;
-          fxStart();
-          logMsg("OK（リロードするまで固定表示）");
-          try{
-            const sys = getMindarSystem();
-            if (sys && typeof sys.pause === "function") sys.pause();
-          }catch(_){}
-        }
-      }, STABLE_MS);
-    }
-
     target0.addEventListener("targetFound", ()=>{
       if (!started || locked) return;
       visible = true;
@@ -422,14 +466,9 @@
     });
 
     // =====================
-    // START
+    // START（ボタン押下でカメラ開始）
     // =====================
     startBtn.addEventListener("click", async ()=>{
-      if (REQUIRE_LANDSCAPE && !isLandscape()){
-        enforceOrientation();
-        return;
-      }
-
       ui.style.display = "none";
       logMsg("初期化中…");
 
@@ -443,23 +482,19 @@
         await sys.start();
         started = true;
 
-        // 画面回転ロック（効かない環境も多い。効けばラッキー程度）
-        try{
-          if (screen.orientation && screen.orientation.lock) {
-            await screen.orientation.lock("landscape");
-          }
-        }catch(_){}
+        // 表示回転の適用＆サイズ調整
+        applyVisualLandscape();
 
-        window.dispatchEvent(new Event("resize"));
         logMsg("カードを映してください");
       }catch(err){
         logMsg("起動失敗: " + (err?.message || String(err)));
+        ui.style.display = "flex";
       }
     });
 
-    // 初期：向き判定
+    // 初期化
     logMsg("STARTを押してください");
-    enforceOrientation();
+    applyVisualLandscape();
   </script>
 </body>
 </html>
