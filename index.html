@@ -10,55 +10,42 @@
 
   <style>
     body { margin: 0; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+
+    /* iPhone SafariのURLバー伸縮対策（innerHeightで追従） */
     :root { --vh: 100vh; }
     @supports (height: 100dvh) { :root { --vh: 100dvh; } }
     html, body { width: 100%; height: 100%; }
 
-    /* 画面全体を包む（ここを回転させる） */
-    #stage{
-      position: fixed;
+    a-scene {
+      position: fixed !important;
       left: 0; top: 0;
-      width: 100vw;
-      height: var(--vh);
-      transform-origin: center center;
-      background: #000;
-    }
-
-    /* 縦のときだけ「見た目を横向き化」 */
-body.force-landscape-visual #stage{
-  width: var(--vh);
-  height: 100vw;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%) rotate(-90deg);
-}
-
-
-    /* stage内のレイヤ（全部 absolute にして回転に追従させる） */
-    a-scene{
-      position: absolute !important;
-      inset: 0;
-      width: 100% !important;
-      height: 100% !important;
+      width: 100vw !important;
+      height: var(--vh) !important;
       z-index: 1;
     }
     .a-canvas, canvas.a-canvas{
-      width: 100% !important;
-      height: 100% !important;
+      width: 100vw !important;
+      height: var(--vh) !important;
       display: block !important;
     }
 
     /* 演出Canvas（カメラの上） */
     #fxCanvas{
-      position: absolute;
-      inset: 0;
+      position: fixed;
+      left: 0; top: 0;
+      width: 100vw;
+      height: var(--vh);
       z-index: 3;
       pointer-events: none;
       display: none;
     }
+
+    /* ふわっと周辺を落とす */
     #vignette{
-      position: absolute;
-      inset: 0;
+      position: fixed;
+      left: 0; top: 0;
+      width: 100vw;
+      height: var(--vh);
       z-index: 4;
       pointer-events: none;
       display:none;
@@ -67,12 +54,9 @@ body.force-landscape-visual #stage{
     }
 
     /* START画面 */
-    #ui{
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    #ui {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
       background: rgba(0,0,0,0.65);
       z-index: 10;
     }
@@ -86,7 +70,6 @@ body.force-landscape-visual #stage{
     }
     #panel h1{ font-size: 18px; margin: 0 0 8px; font-weight: 900; }
     #panel p{ font-size: 14px; margin: 6px 0; line-height: 1.45; color: rgba(255,255,255,0.9); }
-
     #startBtn{
       margin-top: 10px;
       width: 100%;
@@ -100,9 +83,8 @@ body.force-landscape-visual #stage{
     }
 
     #hint{
-      position: absolute;
-      left: 0; right: 0;
-      bottom: 10px;
+      position: fixed; left: 0; right: 0;
+      bottom: env(safe-area-inset-bottom);
       padding: 10px 12px;
       text-align: center;
       font-size: 13px;
@@ -117,42 +99,39 @@ body.force-landscape-visual #stage{
 </head>
 
 <body>
-  <div id="stage">
-    <div id="ui">
-      <div id="panel">
-        <h1>AR</h1>
-        <p>1) START → カメラ許可</p>
-        <p>2) カード（マーカー）を映す</p>
-        <p style="opacity:.85">縦持ちでも、表示は自動で横向きになります</p>
-        <button id="startBtn">START</button>
-      </div>
+  <div id="ui">
+    <div id="panel">
+      <h1>AR</h1>
+      <p>1) START → カメラ許可</p>
+      <p>2) マーカー画像を映す</p>
+      <button id="startBtn">START</button>
     </div>
-
-    <div id="hint">STARTを押してください</div>
-    <canvas id="fxCanvas"></canvas>
-    <div id="vignette"></div>
-
-    <!-- START前に追跡開始しない -->
-    <a-scene
-      id="scene"
-      mindar-image="imageTargetSrc: ./targets.mind; autoStart: false; maxTrack: 1; warmupTolerance: 0; missTolerance: 30; filterMinCF: 0.00001; filterBeta: 0.0001;"
-      vr-mode-ui="enabled: false"
-      device-orientation-permission-ui="enabled: false"
-      renderer="colorManagement: true"
-    >
-      <a-camera position="0 0 0" look-controls="enabled:false"></a-camera>
-      <!-- targets.mind が1枚だけなら targetIndex:0 -->
-      <a-entity id="target0" mindar-image-target="targetIndex: 0"></a-entity>
-    </a-scene>
   </div>
+
+  <div id="hint">STARTを押してください</div>
+  <canvas id="fxCanvas"></canvas>
+  <div id="vignette"></div>
+
+  <!-- START前に追跡開始しない -->
+  <a-scene
+    id="scene"
+    mindar-image="imageTargetSrc: ./targets.mind; autoStart: false; maxTrack: 1; warmupTolerance: 0; missTolerance: 30; filterMinCF: 0.00001; filterBeta: 0.0001;"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false"
+    renderer="colorManagement: true"
+  >
+    <a-camera position="0 0 0" look-controls="enabled:false"></a-camera>
+    <!-- targets.mind が1枚だけなら targetIndex:0 -->
+    <a-entity id="target0" mindar-image-target="targetIndex: 0"></a-entity>
+  </a-scene>
 
   <script>
     // =====================
-    // 設定（ここだけ好みで調整）
+    // 調整ポイント（必要ならここだけ）
     // =====================
-    const STABLE_MS = 1100; // 確定までの遅延（誤確定があるなら 1200〜1400）
+    const STABLE_MS = 1100; // 認識確定まで（早すぎるなら 1200〜1400）
 
-    // ロマンチック（暖色）パレット
+    // 暖色ボケの色
     const ILLUMI_PALETTE = [
       [255, 244, 214], // warm white
       [255, 214, 140], // amber
@@ -161,20 +140,20 @@ body.force-landscape-visual #stage{
       [210, 230, 255], // cool white（少量）
     ];
 
-    // パーティクル量（重ければ count を少し下げる）
+    // 量/サイズ/速度
     const FX = {
-      // イルミ（ボケ）：near/mid/far
-      illumiNear:  { count: 24, r:[18,32], vy:[10,18], a:[0.10,0.18] },
-      illumiMid:   { count: 40, r:[10,18], vy:[16,28], a:[0.10,0.22] },
-      illumiFar:   { count: 66, r:[4,10],  vy:[26,44], a:[0.08,0.18] },
+      // Warm Bokeh（twinkle付き）
+      illumiNear:  { count: 24, r:[18,32], vy:[6,12],  vx:[-18,-8],  a:[0.10,0.18] },
+      illumiMid:   { count: 40, r:[10,18], vy:[10,18], vx:[-14,-6],  a:[0.10,0.22] },
+      illumiFar:   { count: 66, r:[4,10],  vy:[14,24], vx:[-10,-4],  a:[0.08,0.18] },
 
-      // 雪：near/mid/far（近いほど大きめ＆遅め）
-      snowNear: { count: 120, r:[1.8,3.2],  vy:[55,95],   a:[0.10,0.22], drift:18 },
-      snowMid:  { count: 200, r:[1.2,2.2],  vy:[85,130],  a:[0.08,0.18], drift:24 },
-      snowFar:  { count: 280, r:[0.8,1.6],  vy:[115,170], a:[0.06,0.14], drift:30 },
+      // Snow：右→左に流れる（横向きイメージ固定）
+      snowNear: { count: 120, r:[1.8,3.2],  vx:[-220,-140], vy:[25,55],  a:[0.10,0.22], drift:14, layer:"near" },
+      snowMid:  { count: 200, r:[1.2,2.2],  vx:[-170,-100], vy:[35,70],  a:[0.08,0.18], drift:18, layer:"mid"  },
+      snowFar:  { count: 280, r:[0.8,1.6],  vx:[-130,-70],  vy:[45,90],  a:[0.06,0.14], drift:22, layer:"far"  },
     };
 
-    // 雪のグロー（層別：近景強め／遠景弱め）
+    // 雪の層別グロー（近景強め／遠景弱め）
     const SNOW_GLOW = {
       near: { Rmul: 4.2, glowMul: 0.70, coreMul: 0.95 },
       mid:  { Rmul: 3.2, glowMul: 0.50, coreMul: 0.85 },
@@ -182,39 +161,12 @@ body.force-landscape-visual #stage{
     };
 
     // =====================
-    // 縦のときだけ見た目を横向きにする
+    // iPhoneの高さ対策
     // =====================
-    let applying = false;
-    function setVh(){
-      document.documentElement.style.setProperty("--vh", window.innerHeight + "px");
-    }
-    function isPortrait(){
-      return window.innerHeight > window.innerWidth;
-    }
-    function applyVisualLandscape(){
-      if (applying) return;
-      applying = true;
-
-      setVh();
-      if (isPortrait()){
-        document.body.classList.add("force-landscape-visual");
-      } else {
-        document.body.classList.remove("force-landscape-visual");
-      }
-
-      // FXやA-Frameの描画領域を更新
-      if (fxRunning){
-        resizeFx();
-        initFx();
-      } else {
-        // まだ開始してなくてもCanvasサイズだけ合わせる
-        resizeFx();
-      }
-
-      applying = false;
-    }
-    window.addEventListener("resize", applyVisualLandscape, { passive: true });
-    window.addEventListener("orientationchange", applyVisualLandscape, { passive: true });
+    function setVh() { document.documentElement.style.setProperty("--vh", window.innerHeight + "px"); }
+    setVh();
+    window.addEventListener("resize", setVh, { passive: true });
+    window.addEventListener("orientationchange", setVh, { passive: true });
 
     // =====================
     // UI/エラー表示
@@ -243,7 +195,7 @@ body.force-landscape-visual #stage{
     }
 
     // =====================
-    // 状態（認識→確定→固定）
+    // 認識→確定→固定
     // =====================
     let started = false;
     let locked = false;
@@ -257,15 +209,17 @@ body.force-landscape-visual #stage{
     function scheduleLock(){
       if (!started || locked) return;
       if (stableTimer) return;
+
       stableTimer = setTimeout(()=>{
         stableTimer = null;
         if (!started || locked) return;
+
         if (visible){
           locked = true;
           fxStart();
           logMsg("OK（リロードするまで固定表示）");
 
-          // 追跡を止めたい場合（pauseがある環境のみ）
+          // 追跡を止める（環境によりpause無しの場合がある）
           try{
             const sys = getMindarSystem();
             if (sys && typeof sys.pause === "function") sys.pause();
@@ -275,12 +229,17 @@ body.force-landscape-visual #stage{
     }
 
     // =====================
-    // FX（Warm Bokeh + Snow + Twinkle）
+    // FX（Warm Bokeh + Snow + Twinkle / 雪は右→左固定）
     // =====================
     let rafId = null;
     let fxRunning = false;
     let particles = [];
     let lastT = 0;
+
+    function rand(a,b){ return a + Math.random()*(b-a); }
+    function pickCol(){
+      return ILLUMI_PALETTE[Math.floor(Math.random()*ILLUMI_PALETTE.length)];
+    }
 
     function resizeFx(){
       const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
@@ -290,40 +249,39 @@ body.force-landscape-visual #stage{
       fxCanvas.style.height = window.innerHeight + "px";
       ctx.setTransform(dpr,0,0,dpr,0,0);
     }
-    function rand(a,b){ return a + Math.random()*(b-a); }
 
     function initFx(){
       particles = [];
       const w = window.innerWidth, h = window.innerHeight;
 
-      function pickCol(){
-        return ILLUMI_PALETTE[Math.floor(Math.random()*ILLUMI_PALETTE.length)];
-      }
-
       function mkIllumi(G){
-        const col = pickCol();
         particles.push({
           kind: "illumi",
           x: Math.random()*w,
           y: Math.random()*h,
+          vx: rand(G.vx[0], G.vx[1]),
           vy: rand(G.vy[0], G.vy[1]),
           r:  rand(G.r[0],  G.r[1]),
           a:  rand(G.a[0],  G.a[1]),
-          col,
+          col: pickCol(),
           phase: Math.random()*Math.PI*2,
-          tw: rand(0.7, 1.6),       // twinkle速度
-          twAmp: rand(0.18, 0.38),  // twinkle強さ
-          wobble: rand(6, 16)       // 横揺れ
+          tw: rand(0.7, 1.6),      // twinkle速度
+          twAmp: rand(0.18, 0.38), // twinkle強さ
+          wobble: rand(4, 10)      // 揺れ（控えめ）
         });
       }
 
-      function mkSnow(G, layerName){
+      function mkSnow(G){
+        // 右側から入ってくる印象を強めるため、初期xは少し右側にも散らす
+        const x0 = rand(-0.1*w, 1.2*w);
+        const y0 = rand(-0.1*h, 1.1*h);
+
         particles.push({
           kind: "snow",
-          layer: layerName, // near / mid / far
-          x: Math.random()*w,
-          y: Math.random()*h,
-          vx: (Math.random()-0.5)*G.drift,
+          layer: G.layer,
+          x: x0,
+          y: y0,
+          vx: rand(G.vx[0], G.vx[1]), // ★負（右→左）
           vy: rand(G.vy[0], G.vy[1]),
           r:  rand(G.r[0],  G.r[1]),
           a:  rand(G.a[0],  G.a[1]),
@@ -331,15 +289,15 @@ body.force-landscape-visual #stage{
         });
       }
 
-      // イルミ（暖色ボケ）
+      // bokeh
       for (let i=0;i<FX.illumiNear.count;i++) mkIllumi(FX.illumiNear);
       for (let i=0;i<FX.illumiMid.count;i++)  mkIllumi(FX.illumiMid);
       for (let i=0;i<FX.illumiFar.count;i++)  mkIllumi(FX.illumiFar);
 
-      // 雪（層別）
-      for (let i=0;i<FX.snowNear.count;i++) mkSnow(FX.snowNear, "near");
-      for (let i=0;i<FX.snowMid.count;i++)  mkSnow(FX.snowMid,  "mid");
-      for (let i=0;i<FX.snowFar.count;i++)  mkSnow(FX.snowFar,  "far");
+      // snow（層別）
+      for (let i=0;i<FX.snowNear.count;i++) mkSnow(FX.snowNear);
+      for (let i=0;i<FX.snowMid.count;i++)  mkSnow(FX.snowMid);
+      for (let i=0;i<FX.snowFar.count;i++)  mkSnow(FX.snowFar);
     }
 
     function fxStart(){
@@ -362,6 +320,15 @@ body.force-landscape-visual #stage{
       ctx.clearRect(0,0,window.innerWidth,window.innerHeight);
     }
 
+    function respawnSnow(p, w, h){
+      // 右側から入る：xを画面右外へ、yは上〜中くらいに戻す
+      p.x = w + rand(20, 120);
+      p.y = rand(-40, h * 0.75);
+      // 風も少し揺らす
+      p.vx += (Math.random()-0.5) * p.drift;
+      p.vx = Math.min(-40, p.vx); // 必ず左方向
+    }
+
     function tickFx(t){
       if (!fxRunning) return;
       const dt = Math.min(0.05, (t-lastT)/1000);
@@ -370,35 +337,35 @@ body.force-landscape-visual #stage{
       const w = window.innerWidth, h = window.innerHeight;
       ctx.clearRect(0,0,w,h);
 
-      // ---- イルミ（暖色ボケ + twinkle）----
+      // ---- Warm Bokeh（twinkle）----
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
 
       for (const p of particles){
         if (p.kind !== "illumi") continue;
 
-        p.y += p.vy*dt;
         p.phase += dt*p.tw;
-        p.x += Math.sin(p.phase)*p.wobble*dt;
+        p.x += p.vx*dt + Math.sin(p.phase)*p.wobble*dt;
+        p.y += p.vy*dt * 0.5;
 
-        if (p.y > h + 80){ p.y = -80; p.x = Math.random()*w; }
-        if (p.x < -120) p.x = w + 120;
-        if (p.x > w + 120) p.x = -120;
+        // ループ
+        if (p.x < -160) p.x = w + 160;
+        if (p.x > w + 160) p.x = -160;
+        if (p.y < -160) p.y = h + 160;
+        if (p.y > h + 160) p.y = -160;
 
         const tw = 1 + Math.sin(p.phase*1.25)*p.twAmp;
         const a = Math.max(0, Math.min(1, p.a*tw));
         const [r,g,b] = p.col;
 
-        // 外側グロー
-        const R1 = p.r * 2.4;
+        const R1 = p.r * 2.4; // 外側
         const g1 = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,R1);
         g1.addColorStop(0, `rgba(${r},${g},${b},${a*0.24})`);
         g1.addColorStop(1, `rgba(${r},${g},${b},0)`);
         ctx.fillStyle = g1;
         ctx.beginPath(); ctx.arc(p.x,p.y,R1,0,Math.PI*2); ctx.fill();
 
-        // コア
-        const R2 = p.r;
+        const R2 = p.r; // コア
         const g2 = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,R2);
         g2.addColorStop(0, `rgba(${r},${g},${b},${a*0.90})`);
         g2.addColorStop(1, `rgba(${r},${g},${b},0)`);
@@ -408,27 +375,29 @@ body.force-landscape-visual #stage{
 
       ctx.restore();
 
-      // ---- 雪（層別グロー：近景強め／遠景弱め）----
+      // ---- Snow（右→左固定 + 層別グロー）----
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
 
       for (const p of particles){
         if (p.kind !== "snow") continue;
 
+        // 右→左 + 少し下（横向きイメージ固定）
         p.x += p.vx*dt;
         p.y += p.vy*dt;
 
-        // 風で少し揺らす
-        p.vx += (Math.random()-0.5)*10*dt;
-        p.vx = Math.max(-p.drift, Math.min(p.drift, p.vx));
+        // 微風（速度のブレ）
+        p.vx += (Math.random()-0.5) * 18 * dt;
+        // 左方向を維持（0に近づき過ぎないように）
+        p.vx = Math.min(-40, p.vx);
 
-        if (p.y > h + 14){ p.y = -14; p.x = Math.random()*w; p.vx = (Math.random()-0.5)*p.drift; }
-        if (p.x < -20) p.x = w + 20;
-        if (p.x > w + 20) p.x = -20;
+        // 画面外に出たら右から復帰
+        if (p.x < -60 || p.y > h + 60) {
+          respawnSnow(p, w, h);
+        }
 
         const L = SNOW_GLOW[p.layer || "mid"];
 
-        // 外側グロー（層別）
         const Rg = p.r * L.Rmul;
         const ag = Math.min(1, p.a * L.glowMul);
 
@@ -436,12 +405,11 @@ body.force-landscape-visual #stage{
         g.addColorStop(0, `rgba(255,255,255,${ag})`);
         g.addColorStop(1, `rgba(255,255,255,0)`);
         ctx.fillStyle = g;
-        ctx.beginPath(); ctx.arc(p.x, p.y, Rg, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, Rg, 0, Math.PI*2); ctx.fill();
 
-        // コア（層別）
         const ac = Math.min(1, p.a * L.coreMul);
         ctx.fillStyle = `rgba(255,255,255,${ac})`;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
       }
 
       ctx.restore();
@@ -449,8 +417,13 @@ body.force-landscape-visual #stage{
       rafId = requestAnimationFrame(tickFx);
     }
 
+    window.addEventListener("resize", ()=>{
+      resizeFx();
+      if (fxRunning) initFx();
+    }, {passive:true});
+
     // =====================
-    // 認識イベント
+    // MindAR イベント
     // =====================
     target0.addEventListener("targetFound", ()=>{
       if (!started || locked) return;
@@ -459,6 +432,7 @@ body.force-landscape-visual #stage{
     });
 
     target0.addEventListener("targetLost", ()=>{
+      // locked後は消えない（リロードまで固定）
       if (!started || locked) return;
       visible = false;
       clearStable();
@@ -467,7 +441,7 @@ body.force-landscape-visual #stage{
     });
 
     // =====================
-    // START（ボタン押下でカメラ開始）
+    // START
     // =====================
     startBtn.addEventListener("click", async ()=>{
       ui.style.display = "none";
@@ -483,8 +457,8 @@ body.force-landscape-visual #stage{
         await sys.start();
         started = true;
 
-        // 表示回転の適用＆サイズ調整
-        applyVisualLandscape();
+        // 画面サイズ再計算（iOSで表示が崩れたときの保険）
+        window.dispatchEvent(new Event("resize"));
 
         logMsg("カードを映してください");
       }catch(err){
@@ -493,9 +467,9 @@ body.force-landscape-visual #stage{
       }
     });
 
-    // 初期化
+    // 初期表示
     logMsg("STARTを押してください");
-    applyVisualLandscape();
+    resizeFx();
   </script>
 </body>
 </html>
