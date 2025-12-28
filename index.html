@@ -115,7 +115,7 @@
   <!-- START前に追跡開始しない -->
   <a-scene
     id="scene"
-    mindar-image="imageTargetSrc: ./targets.mind; autoStart: false; maxTrack: 1; warmupTolerance: 0; missTolerance: 30; filterMinCF: 0.00001; filterBeta: 0.0001;"
+    mindar-image="imageTargetSrc: ./targets.mind; autoStart: false; maxTrack: 1; warmupTolerance: 0; missTolerance: 60; filterMinCF: 0.00001; filterBeta: 0.0001;"
     vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false"
     renderer="colorManagement: true"
@@ -131,12 +131,12 @@
     // =====================
 
     // ★ ブレ対策：確定を「遅く＆安定」にする
-    const STABLE_MS = 1800;      // 例: 1600〜2200 で調整（長いほどブレに強い）
-    const LOST_GRACE_MS = 280;   // 一瞬見失っても継続扱い（200〜350推奨）
-    const CHECK_INTERVAL_MS = 50; // 安定判定のチェック間隔（ms）
+    const STABLE_MS = 1400;      // 例: 1600〜2200 で調整（長いほどブレに強い）
+    const LOST_GRACE_MS = 700;   // 一瞬見失っても継続扱い（200〜350推奨）
+    const CHECK_INTERVAL_MS = 60; // 安定判定のチェック間隔（ms）
 
     // ★ きらきら追加：数を増やすと華やか、増やしすぎると重い
-    const SPARK_COUNT = 120;     // 80〜160 推奨
+    const SPARK_COUNT = 150;     // 80〜160 推奨
 
     // 暖色ボケの色
     const ILLUMI_PALETTE = [
@@ -212,40 +212,50 @@
     let monitorTimer = null;
 
     function startMonitor(){
-      if (monitorTimer) return;
-      monitorTimer = setInterval(()=>{
-        if (!started || locked) return;
+  if (monitorTimer) return;
 
-        const now = performance.now();
+  monitorTimer = setInterval(()=>{
+    if (!started || locked) return;
 
-        // 一定時間見えていないならリセット
-        if (seenStart !== 0 && (now - lastSeen) > LOST_GRACE_MS) {
-          seenStart = 0;
-          // 確定前は演出を止める（確定後は固定）
-          fxStop();
-          logMsg("カードを映してください");
-          return;
-        }
+    const now = performance.now();
 
-        // 見え続けたら確定
-        if (seenStart !== 0 && (now - seenStart) >= STABLE_MS) {
-          locked = true;
-          fxStart();
-          logMsg("OK（リロードするまで固定表示）");
+    // ★イベントではなく、実際に見えているかで判定
+    const isVisible = !!(target0 && target0.object3D && target0.object3D.visible);
 
-          // 追跡を止める（省電力）
-          try{
-            const sys = getMindarSystem();
-            if (sys && typeof sys.pause === "function") sys.pause();
-            else if (sys && typeof sys.stop === "function") sys.stop();
-          }catch(_){}
+    if (isVisible){
+      // 見え始めた
+      if (seenStart === 0) seenStart = now;
+      lastSeen = now;
 
-          // 監視停止
-          clearInterval(monitorTimer);
-          monitorTimer = null;
-        }
-      }, CHECK_INTERVAL_MS);
+      logMsg("ホールド中…");
+    } else {
+      // 一瞬見失っても猶予内なら継続
+      if (seenStart !== 0 && (now - lastSeen) > LOST_GRACE_MS){
+        seenStart = 0;
+        fxStop();
+        logMsg("カードを映してください");
+      }
+      return;
     }
+
+    // 見え続けたら確定
+    if (seenStart !== 0 && (now - seenStart) >= STABLE_MS){
+      locked = true;
+      fxStart();
+      logMsg("OK（リロードするまで固定表示）");
+
+      try{
+        const sys = getMindarSystem();
+        if (sys && typeof sys.pause === "function") sys.pause();
+        else if (sys && typeof sys.stop === "function") sys.stop();
+      }catch(_){}
+
+      clearInterval(monitorTimer);
+      monitorTimer = null;
+    }
+  }, CHECK_INTERVAL_MS);
+}
+
 
     // =====================
     // FX（Warm Bokeh + Snow + Twinkle + Spark）
@@ -496,23 +506,14 @@
     // =====================
     // MindAR イベント
     // =====================
-    target0.addEventListener("targetFound", ()=>{
-      if (!started || locked) return;
+   target0.addEventListener("targetFound", ()=>{
+  if (!started || locked) return;
+  startMonitor();
+});
+target0.addEventListener("targetLost", ()=>{
+  // 何もしない（ロスト猶予は monitor が見る）
+});
 
-      const now = performance.now();
-      if (seenStart === 0) seenStart = now;
-      lastSeen = now;
-
-      startMonitor(); // 監視開始（未開始なら）
-      logMsg("ホールド中…");
-    });
-
-    target0.addEventListener("targetLost", ()=>{
-      if (!started || locked) return;
-
-      // 即リセットしない（猶予内なら継続扱い）
-      lastSeen = performance.now();
-    });
 
     // =====================
     // START
