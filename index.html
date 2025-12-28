@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Romantic AR</title>
+  <title>HOGE</title>
 
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
@@ -129,7 +129,14 @@
     // =====================
     // 調整ポイント（必要ならここだけ）
     // =====================
-    const STABLE_MS = 1100; // 認識確定まで（早すぎるなら 1200〜1400）
+
+    // ★ ブレ対策：確定を「遅く＆安定」にする
+    const STABLE_MS = 1800;      // 例: 1600〜2200 で調整（長いほどブレに強い）
+    const LOST_GRACE_MS = 280;   // 一瞬見失っても継続扱い（200〜350推奨）
+    const CHECK_INTERVAL_MS = 50; // 安定判定のチェック間隔（ms）
+
+    // ★ きらきら追加：数を増やすと華やか、増やしすぎると重い
+    const SPARK_COUNT = 120;     // 80〜160 推奨
 
     // 暖色ボケの色
     const ILLUMI_PALETTE = [
@@ -140,14 +147,13 @@
       [210, 230, 255], // cool white（少量）
     ];
 
-    // 量/サイズ/速度
+    // 量/サイズ/速度（雪は右→左に流れる＝横向きイメージ固定）
     const FX = {
       // Warm Bokeh（twinkle付き）
       illumiNear:  { count: 24, r:[18,32], vy:[6,12],  vx:[-18,-8],  a:[0.10,0.18] },
       illumiMid:   { count: 40, r:[10,18], vy:[10,18], vx:[-14,-6],  a:[0.10,0.22] },
       illumiFar:   { count: 66, r:[4,10],  vy:[14,24], vx:[-10,-4],  a:[0.08,0.18] },
 
-      // Snow：右→左に流れる（横向きイメージ固定）
       snowNear: { count: 120, r:[1.8,3.2],  vx:[-220,-140], vy:[25,55],  a:[0.10,0.22], drift:14, layer:"near" },
       snowMid:  { count: 200, r:[1.2,2.2],  vx:[-170,-100], vy:[35,70],  a:[0.08,0.18], drift:18, layer:"mid"  },
       snowFar:  { count: 280, r:[0.8,1.6],  vx:[-130,-70],  vy:[45,90],  a:[0.06,0.14], drift:22, layer:"far"  },
@@ -195,41 +201,54 @@
     }
 
     // =====================
-    // 認識→確定→固定
+    // 認識→確定→固定（安定判定）
     // =====================
     let started = false;
     let locked = false;
-    let visible = false;
-    let stableTimer = null;
 
-    function clearStable(){
-      if (stableTimer){ clearTimeout(stableTimer); stableTimer=null; }
-    }
+    // 見え続けたかの判定用
+    let seenStart = 0;   // 見え始め
+    let lastSeen = 0;    // 最後に見えた
+    let monitorTimer = null;
 
-    function scheduleLock(){
-      if (!started || locked) return;
-      if (stableTimer) return;
-
-      stableTimer = setTimeout(()=>{
-        stableTimer = null;
+    function startMonitor(){
+      if (monitorTimer) return;
+      monitorTimer = setInterval(()=>{
         if (!started || locked) return;
 
-        if (visible){
+        const now = performance.now();
+
+        // 一定時間見えていないならリセット
+        if (seenStart !== 0 && (now - lastSeen) > LOST_GRACE_MS) {
+          seenStart = 0;
+          // 確定前は演出を止める（確定後は固定）
+          fxStop();
+          logMsg("カードを映してください");
+          return;
+        }
+
+        // 見え続けたら確定
+        if (seenStart !== 0 && (now - seenStart) >= STABLE_MS) {
           locked = true;
           fxStart();
           logMsg("OK（リロードするまで固定表示）");
 
-          // 追跡を止める（環境によりpause無しの場合がある）
+          // 追跡を止める（省電力）
           try{
             const sys = getMindarSystem();
             if (sys && typeof sys.pause === "function") sys.pause();
+            else if (sys && typeof sys.stop === "function") sys.stop();
           }catch(_){}
+
+          // 監視停止
+          clearInterval(monitorTimer);
+          monitorTimer = null;
         }
-      }, STABLE_MS);
+      }, CHECK_INTERVAL_MS);
     }
 
     // =====================
-    // FX（Warm Bokeh + Snow + Twinkle / 雪は右→左固定）
+    // FX（Warm Bokeh + Snow + Twinkle + Spark）
     // =====================
     let rafId = null;
     let fxRunning = false;
@@ -265,14 +284,13 @@
           a:  rand(G.a[0],  G.a[1]),
           col: pickCol(),
           phase: Math.random()*Math.PI*2,
-          tw: rand(0.7, 1.6),      // twinkle速度
-          twAmp: rand(0.18, 0.38), // twinkle強さ
-          wobble: rand(4, 10)      // 揺れ（控えめ）
+          tw: rand(0.7, 1.7),      // 少しだけ上げて“揺らぎ”強化
+          twAmp: rand(0.20, 0.45), // ほんの少し強め
+          wobble: rand(4, 10)
         });
       }
 
       function mkSnow(G){
-        // 右側から入ってくる印象を強めるため、初期xは少し右側にも散らす
         const x0 = rand(-0.1*w, 1.2*w);
         const y0 = rand(-0.1*h, 1.1*h);
 
@@ -281,7 +299,7 @@
           layer: G.layer,
           x: x0,
           y: y0,
-          vx: rand(G.vx[0], G.vx[1]), // ★負（右→左）
+          vx: rand(G.vx[0], G.vx[1]), // 右→左（負）
           vy: rand(G.vy[0], G.vy[1]),
           r:  rand(G.r[0],  G.r[1]),
           a:  rand(G.a[0],  G.a[1]),
@@ -298,6 +316,21 @@
       for (let i=0;i<FX.snowNear.count;i++) mkSnow(FX.snowNear);
       for (let i=0;i<FX.snowMid.count;i++)  mkSnow(FX.snowMid);
       for (let i=0;i<FX.snowFar.count;i++)  mkSnow(FX.snowFar);
+
+      // spark（きらきら）…小さく鋭い瞬き
+      for (let i=0;i<SPARK_COUNT;i++){
+        particles.push({
+          kind: "spark",
+          x: Math.random()*w,
+          y: Math.random()*h,
+          r: rand(1.0, 2.4),
+          a: rand(0.16, 0.40),
+          phase: Math.random()*Math.PI*2,
+          tw: rand(2.2, 5.4),      // 速め
+          twAmp: rand(0.55, 0.95), // 強め
+          drift: rand(4, 10)
+        });
+      }
     }
 
     function fxStart(){
@@ -321,10 +354,8 @@
     }
 
     function respawnSnow(p, w, h){
-      // 右側から入る：xを画面右外へ、yは上〜中くらいに戻す
       p.x = w + rand(20, 120);
       p.y = rand(-40, h * 0.75);
-      // 風も少し揺らす
       p.vx += (Math.random()-0.5) * p.drift;
       p.vx = Math.min(-40, p.vx); // 必ず左方向
     }
@@ -348,7 +379,6 @@
         p.x += p.vx*dt + Math.sin(p.phase)*p.wobble*dt;
         p.y += p.vy*dt * 0.5;
 
-        // ループ
         if (p.x < -160) p.x = w + 160;
         if (p.x > w + 160) p.x = -160;
         if (p.y < -160) p.y = h + 160;
@@ -358,19 +388,63 @@
         const a = Math.max(0, Math.min(1, p.a*tw));
         const [r,g,b] = p.col;
 
-        const R1 = p.r * 2.4; // 外側
+        const R1 = p.r * 2.4;
         const g1 = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,R1);
         g1.addColorStop(0, `rgba(${r},${g},${b},${a*0.24})`);
         g1.addColorStop(1, `rgba(${r},${g},${b},0)`);
         ctx.fillStyle = g1;
         ctx.beginPath(); ctx.arc(p.x,p.y,R1,0,Math.PI*2); ctx.fill();
 
-        const R2 = p.r; // コア
+        const R2 = p.r;
         const g2 = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,R2);
         g2.addColorStop(0, `rgba(${r},${g},${b},${a*0.90})`);
         g2.addColorStop(1, `rgba(${r},${g},${b},0)`);
         ctx.fillStyle = g2;
         ctx.beginPath(); ctx.arc(p.x,p.y,R2,0,Math.PI*2); ctx.fill();
+      }
+
+      ctx.restore();
+
+      // ---- Spark（きらきら）----
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+
+      for (const p of particles){
+        if (p.kind !== "spark") continue;
+
+        p.phase += dt * p.tw;
+
+        // かなりメリハリのある瞬き
+        const tw = 1 + Math.sin(p.phase*2.0) * p.twAmp;
+        const a = Math.max(0, Math.min(1, p.a * tw));
+
+        // ほんの少し漂わせる
+        p.x += Math.sin(p.phase) * p.drift * dt;
+        p.y += Math.cos(p.phase*0.8) * (p.drift * 0.7) * dt;
+
+        if (p.x < -30) p.x = w + 30;
+        if (p.x > w + 30) p.x = -30;
+        if (p.y < -30) p.y = h + 30;
+        if (p.y > h + 30) p.y = -30;
+
+        // 星っぽい十字 + 薄いグロー
+        ctx.strokeStyle = `rgba(255,255,255,${a})`;
+        ctx.lineWidth = 1.4;
+
+        const s = 7.0; // 十字の長さ
+        ctx.beginPath();
+        ctx.moveTo(p.x - s, p.y); ctx.lineTo(p.x + s, p.y);
+        ctx.moveTo(p.x, p.y - s); ctx.lineTo(p.x, p.y + s);
+        ctx.stroke();
+
+        const R = p.r * 3.2;
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R);
+        g.addColorStop(0, `rgba(255,255,255,${a*0.30})`);
+        g.addColorStop(1, `rgba(255,255,255,0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, R, 0, Math.PI*2);
+        ctx.fill();
       }
 
       ctx.restore();
@@ -382,16 +456,13 @@
       for (const p of particles){
         if (p.kind !== "snow") continue;
 
-        // 右→左 + 少し下（横向きイメージ固定）
         p.x += p.vx*dt;
         p.y += p.vy*dt;
 
         // 微風（速度のブレ）
         p.vx += (Math.random()-0.5) * 18 * dt;
-        // 左方向を維持（0に近づき過ぎないように）
         p.vx = Math.min(-40, p.vx);
 
-        // 画面外に出たら右から復帰
         if (p.x < -60 || p.y > h + 60) {
           respawnSnow(p, w, h);
         }
@@ -427,17 +498,20 @@
     // =====================
     target0.addEventListener("targetFound", ()=>{
       if (!started || locked) return;
-      visible = true;
-      scheduleLock();
+
+      const now = performance.now();
+      if (seenStart === 0) seenStart = now;
+      lastSeen = now;
+
+      startMonitor(); // 監視開始（未開始なら）
+      logMsg("ホールド中…");
     });
 
     target0.addEventListener("targetLost", ()=>{
-      // locked後は消えない（リロードまで固定）
       if (!started || locked) return;
-      visible = false;
-      clearStable();
-      fxStop();
-      logMsg("カードを映してください");
+
+      // 即リセットしない（猶予内なら継続扱い）
+      lastSeen = performance.now();
     });
 
     // =====================
@@ -457,7 +531,7 @@
         await sys.start();
         started = true;
 
-        // 画面サイズ再計算（iOSで表示が崩れたときの保険）
+        // iOSで表示が崩れたときの保険
         window.dispatchEvent(new Event("resize"));
 
         logMsg("カードを映してください");
