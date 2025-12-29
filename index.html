@@ -135,8 +135,10 @@
     const LOST_GRACE_MS = 700;   // 一瞬見失っても継続扱い（200〜350推奨）
     const CHECK_INTERVAL_MS = 60; // 安定判定のチェック間隔（ms）
 
-    // ★ きらきら追加：数を増やすと華やか、増やしすぎると重い
-    const SPARK_COUNT = 150;     // 80〜160 推奨
+        // ★ きらきら（spark）は大幅に減らす：近景は画面端だけ、遠景はたまにだけ点灯
+    const SPARK_EDGE_COUNT = 6;       // 画面端（近景）の数：4〜8推奨
+    const SPARK_FAR_COUNT  = 10;      // 遠景の数：6〜14推奨（普段は消えてる）
+    const SPARK_EDGE_MARGIN = 26;     // 端から何px以内を“画面端”扱いにするか
 
     // 暖色ボケの色
     const ILLUMI_PALETTE = [
@@ -327,19 +329,55 @@
       for (let i=0;i<FX.snowMid.count;i++)  mkSnow(FX.snowMid);
       for (let i=0;i<FX.snowFar.count;i++)  mkSnow(FX.snowFar);
 
-      // spark（きらきら）…小さく鋭い瞬き
-      for (let i=0;i<SPARK_COUNT;i++){
-        particles.push({
-          kind: "spark",
-          x: Math.random()*w,
-          y: Math.random()*h,
-          r: rand(1.0, 2.4),
-          a: rand(0.16, 0.40),
-          phase: Math.random()*Math.PI*2,
-          tw: rand(2.2, 5.4),      // 速め
-          twAmp: rand(0.55, 0.95), // 強め
-          drift: rand(4, 10)
-        });
+            // spark（きらきら）…「端（近景）」＋「遠景（たまにだけ点灯）」
+      {
+        const now = performance.now();
+        const m = SPARK_EDGE_MARGIN;
+
+        // 近景：画面端だけ（少数）
+        for (let i = 0; i < SPARK_EDGE_COUNT; i++) {
+          const edge = Math.floor(Math.random() * 4); // 0:top 1:right 2:bottom 3:left
+          let x, y;
+
+          if (edge === 0) { x = rand(0, w);   y = rand(0, m); }
+          if (edge === 1) { x = rand(w - m, w); y = rand(0, h); }
+          if (edge === 2) { x = rand(0, w);   y = rand(h - m, h); }
+          if (edge === 3) { x = rand(0, m);   y = rand(0, h); }
+
+          particles.push({
+            kind: "spark",
+            layer: "edge",
+            x, y,
+            r: rand(1.1, 2.1),
+            a: rand(0.10, 0.18),
+            phase: Math.random() * Math.PI * 2,
+            tw: rand(1.2, 2.4),
+            twAmp: rand(0.25, 0.55),
+            drift: 0,
+            on: true,
+            nextSwitch: now
+          });
+        }
+
+        // 遠景：普段OFF、たまに短時間だけON（「きらっ」）
+        for (let i = 0; i < SPARK_FAR_COUNT; i++) {
+          particles.push({
+            kind: "spark",
+            layer: "far",
+            x: rand(0, w),
+            y: rand(0, h),
+            r: rand(0.8, 1.5),
+            a: rand(0.10, 0.16),
+            phase: Math.random() * Math.PI * 2,
+            tw: rand(2.2, 5.0),
+            twAmp: rand(0.60, 0.95),
+            drift: rand(0, 6),
+            on: false,
+            nextSwitch: now + rand(400, 2500),
+            onDur: rand(120, 320),
+            offDur: rand(3500, 9000)
+          });
+        }
       }
     }
 
@@ -415,45 +453,64 @@
 
       ctx.restore();
 
-      // ---- Spark（きらきら）----
+            // ---- Spark（きらきら：端＋遠景たまに）----
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
+
+      const nowSpark = performance.now();
 
       for (const p of particles){
         if (p.kind !== "spark") continue;
 
+        // 遠景は「普段OFF → たまにON」
+        if (p.layer === "far") {
+          if (nowSpark >= p.nextSwitch) {
+            p.on = !p.on;
+            p.nextSwitch = nowSpark + (p.on ? p.onDur : p.offDur);
+
+            // 点灯するたびに位置を少し変える（遠景で“ときどき”感）
+            if (p.on) {
+              p.x = rand(0, w);
+              p.y = rand(0, h);
+            }
+          }
+          if (!p.on) continue; // OFFなら描かない
+        }
+
         p.phase += dt * p.tw;
 
-        // かなりメリハリのある瞬き
-        const tw = 1 + Math.sin(p.phase*2.0) * p.twAmp;
+        // 瞬き（控えめ）
+        const tw = 1 + Math.sin(p.phase * 2.0) * p.twAmp;
         const a = Math.max(0, Math.min(1, p.a * tw));
 
-        // ほんの少し漂わせる
-        p.x += Math.sin(p.phase) * p.drift * dt;
-        p.y += Math.cos(p.phase*0.8) * (p.drift * 0.7) * dt;
+        // 遠景は少し漂う（端は固定して邪魔をしない）
+        if (p.layer === "far") {
+          p.x += Math.sin(p.phase) * p.drift * dt;
+          p.y += Math.cos(p.phase * 0.8) * (p.drift * 0.7) * dt;
 
-        if (p.x < -30) p.x = w + 30;
-        if (p.x > w + 30) p.x = -30;
-        if (p.y < -30) p.y = h + 30;
-        if (p.y > h + 30) p.y = -30;
+          if (p.x < -30) p.x = w + 30;
+          if (p.x > w + 30) p.x = -30;
+          if (p.y < -30) p.y = h + 30;
+          if (p.y > h + 30) p.y = -30;
+        }
 
-        // 星っぽい十字 + 薄いグロー
-        ctx.strokeStyle = `rgba(255,255,255,${a})`;
-        ctx.lineWidth = 1.4;
-
-        const s = 7.0; // 十字の長さ
+        // グロー（十字/線は描かない）
+        const R1 = (p.layer === "edge") ? (p.r * 6.0) : (p.r * 4.8);
+        const g1 = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R1);
+        g1.addColorStop(0, `rgba(255,255,255,${a*0.16})`);
+        g1.addColorStop(1, `rgba(255,255,255,0)`);
+        ctx.fillStyle = g1;
         ctx.beginPath();
-        ctx.moveTo(p.x - s, p.y); ctx.lineTo(p.x + s, p.y);
-        ctx.moveTo(p.x, p.y - s); ctx.lineTo(p.x, p.y + s);
-        ctx.stroke();
+        ctx.arc(p.x, p.y, R1, 0, Math.PI*2);
+        ctx.fill();
 
-        const R = p.r * 3.2;
-        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R);
-        g.addColorStop(0, `rgba(255,255,255,${a*0.30})`);
-        g.addColorStop(1, `rgba(255,255,255,0)`);
-        ctx.fillStyle = g;
+        const R2 = p.r * 1.15;
+        const g2 = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R2);
+        g2.addColorStop(0, `rgba(255,255,255,${a*0.95})`);
+        g2.addColorStop(1, `rgba(255,255,255,0)`);
+        ctx.fillStyle = g2;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, R, 0, Math.PI*2);
+        ctx.arc(p.x, p.y, R2, 0, Math.PI*2);
         ctx.fill();
       }
 
