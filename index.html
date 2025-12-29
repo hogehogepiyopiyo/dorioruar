@@ -40,6 +40,23 @@
       display: none;
     }
 
+    /* リムライト（左上→右下 / RGB(255,211,164)） */
+    #rimLight{
+      position: fixed;
+      left: 0; top: 0;
+      width: 100vw;
+      height: var(--vh);
+      pointer-events: none;
+      z-index: 2;            /* a-scene(1) < rim(2) < fxCanvas(3) */
+      display: none;         /* fxStartでON */
+      mix-blend-mode: screen;
+      filter: blur(10px);
+      background: linear-gradient(to bottom right,
+        rgba(255, 211, 164, 0.42) 0%,
+        rgba(255, 211, 164, 0.18) 25%,
+        rgba(255, 211, 164, 0.00) 60%);
+    }
+
     /* ふわっと周辺を落とす */
     #vignette{
       position: fixed;
@@ -110,6 +127,7 @@
 
   <div id="hint">STARTを押してください</div>
   <canvas id="fxCanvas"></canvas>
+  <div id="rimLight"></div>
   <div id="vignette"></div>
 
   <!-- START前に追跡開始しない -->
@@ -185,6 +203,7 @@
     const target0 = document.getElementById("target0");
     const fxCanvas = document.getElementById("fxCanvas");
     const vignette = document.getElementById("vignette");
+    const rimLight = document.getElementById("rimLight");
     const startBtn = document.getElementById("startBtn");
     const ctx = fxCanvas.getContext("2d");
 
@@ -385,6 +404,7 @@
       if (fxRunning) return;
       fxRunning = true;
       fxCanvas.style.display = "block";
+      rimLight.style.display = "block";
       vignette.style.display = "block";
       resizeFx();
       initFx();
@@ -395,6 +415,7 @@
     function fxStop(){
       fxRunning = false;
       fxCanvas.style.display = "none";
+      rimLight.style.display = "none";
       vignette.style.display = "none";
       if (rafId) cancelAnimationFrame(rafId);
       rafId = null;
@@ -483,6 +504,10 @@
         const tw = 1 + Math.sin(p.phase * 2.0) * p.twAmp;
         const a = Math.max(0, Math.min(1, p.a * tw));
 
+        // ★ 点灯中の明るさブースト（遠景だけ強く）
+        const boost = (p.layer === "far") ? 2.2 : 1.0;
+        const a2 = Math.min(1, a * boost);
+
         // 遠景は少し漂う（端は固定して邪魔をしない）
         if (p.layer === "far") {
           p.x += Math.sin(p.phase) * p.drift * dt;
@@ -495,9 +520,9 @@
         }
 
         // グロー（十字/線は描かない）
-        const R1 = (p.layer === "edge") ? (p.r * 6.0) : (p.r * 4.8);
+        const R1 = (p.layer === "edge") ? (p.r * 6.0) : (p.r * 6.2);
         const g1 = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R1);
-        g1.addColorStop(0, `rgba(255,255,255,${a*0.16})`);
+        g1.addColorStop(0, `rgba(255,255,255,${a2*0.22})`);
         g1.addColorStop(1, `rgba(255,255,255,0)`);
         ctx.fillStyle = g1;
         ctx.beginPath();
@@ -506,7 +531,7 @@
 
         const R2 = p.r * 1.15;
         const g2 = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R2);
-        g2.addColorStop(0, `rgba(255,255,255,${a*0.95})`);
+        g2.addColorStop(0, `rgba(255,255,255,${a2*1.10})`);
         g2.addColorStop(1, `rgba(255,255,255,0)`);
         ctx.fillStyle = g2;
         ctx.beginPath();
